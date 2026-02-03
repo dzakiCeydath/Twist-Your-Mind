@@ -1,14 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Twist Your Mind </title>
-
-    <link rel="stylesheet" href="style.css">
-    <script src="script.js"></script>
+  <title>Twist Your Mind</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    
+
+<h1>🇮🇩 Twist Your Mind</h1>
+
+<div id="menu">
+  <button id="createBtn">Buat Room</button>
+  <input id="roomInput" placeholder="Masukkan Room ID">
+  <button id="joinBtn">Gabung</button>
+</div>
+
+<div id="gameArea" style="display:none;">
+  <h2 id="roundInfo"></h2>
+
+  <div class="bars">
+    <div>😊 Mood <div class="bar"><div id="moodBar"></div></div></div>
+    <div>💰 Ekonomi <div class="bar"><div id="ecoBar"></div></div></div>
+    <div>⚖ Hukum <div class="bar"><div id="lawBar"></div></div></div>
+    <div>🤝 Harmoni <div class="bar"><div id="harmBar"></div></div></div>
+  </div>
+
+  <h3 id="crisisText"></h3>
+
+  <div id="voteArea">
+    <button onclick="vote('A')">Opsi A</button>
+    <button onclick="vote('B')">Opsi B</button>
+  </div>
+
+  <div id="resultOverlay" class="hidden">
+    <div id="resultBox"></div>
+  </div>
+
+</div>
+
+<script type="module" src="script.js"></script>
 </body>
 </html>
