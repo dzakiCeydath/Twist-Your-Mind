@@ -2,7 +2,7 @@ import { initializeApp } from
 "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 
 import { 
-  getDatabase, ref, set, update, onValue, get, remove, runTransaction
+  getDatabase, ref, set, update, onValue, get, remove, runTransaction, onDisconnect
 } from 
 "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
@@ -20,45 +20,114 @@ let roomId = "";
 let playerId = "player_" + Math.floor(Math.random()*10000);
 
 const crises = [
-  { text: "Warga ingin hari libur tambahan!", A:{mood:+10, eco:-5}, B:{eco:+5, mood:-5}},
-  { text: "Demo WiFi lambat.", A:{mood:+5}, B:{harm:-5}},
-  { text: "Subsidi kopi nasional?", A:{mood:+8, eco:-8}, B:{eco:+5}},
-  { text: "Transparansi diminta warga.", A:{law:+5}, B:{harm:-5}},
-  { text: "Harga jajanan naik.", A:{eco:+5, mood:-5}, B:{mood:+3}},
-  { text: "Festival nasional besar.", A:{mood:+7, eco:-5}, B:{eco:+5}},
-  { text: "Pajak lupa ditarik.", A:{eco:-10}, B:{eco:+5}},
-  { text: "Tagar nasional trending.", A:{mood:+5}, B:{harm:+5}},
-  { text: "Rapat terlalu lama.", A:{law:+5}, B:{mood:-5}},
-  { text: "Media salah kutip aturan.", A:{law:+5}, B:{mood:-5}}
+  { text:"Warga ingin hari libur tambahan!", A:{mood:+10}, B:{eco:+5}},
+  { text:"Demo WiFi lambat.", A:{mood:+5}, B:{harm:-5}},
+  { text:"Harga jajanan naik.", A:{eco:+5}, B:{mood:-5}}
 ];
 
 document.getElementById("createBtn").onclick = createRoom;
 document.getElementById("joinBtn").onclick = joinRoom;
+document.getElementById("startBtn").onclick = startGameByHost;
 
 async function createRoom(){
-  roomId = "room_" + Math.floor(Math.random()*1000);
+
+  roomId = Math.random().toString(36).substring(2,7);
 
   await set(ref(db,"rooms/"+roomId),{
+    status:"waiting",
+    host:playerId,
+    players:{
+      [playerId]: true
+    },
     gameState:{
-      mood:70, eco:70, law:70, harm:70,
+      mood:70, eco:70,
       round:1, crisisIndex:0
     },
-    players:{},
     votes:{}
   });
 
-  await set(ref(db,"rooms/"+roomId+"/players/"+playerId),true);
-  startGame();
+  enterLobby();
 }
 
 async function joinRoom(){
-  roomId = document.getElementById("roomInput").value;
+
+  roomId = document.getElementById("roomInput").value.trim();
+
+  const snap = await get(ref(db,"rooms/"+roomId));
+  if(!snap.exists()){
+    alert("Room tidak ditemukan!");
+    return;
+  }
+
   await set(ref(db,"rooms/"+roomId+"/players/"+playerId),true);
-  startGame();
+
+  enterLobby();
+}
+
+function enterLobby(){
+
+  document.getElementById("menu").style.display="none";
+  document.getElementById("lobby").style.display="block";
+  document.getElementById("roomDisplay").innerText="Room ID: "+roomId;
+
+  onDisconnect(ref(db,"rooms/"+roomId+"/players/"+playerId)).remove();
+
+  listenRoom();
+}
+
+function listenRoom(){
+
+  onValue(ref(db,"rooms/"+roomId), async (snap)=>{
+
+    if(!snap.exists()) return;
+
+    const room = snap.val();
+    const players = room.players ? Object.keys(room.players) : [];
+
+    document.getElementById("playerCount").innerText =
+      "Jumlah Player: "+players.length;
+
+    // Ganti host jika host keluar
+    if(room.host && !room.players[room.host] && players.length>0){
+      await update(ref(db,"rooms/"+roomId),{
+        host: players[0]
+      });
+    }
+
+    // Tampilkan tombol start hanya untuk host
+    if(room.host === playerId && room.status==="waiting"){
+      document.getElementById("startBtn").style.display="block";
+    } else {
+      document.getElementById("startBtn").style.display="none";
+    }
+
+    if(room.status==="started"){
+      startGame();
+    }
+
+  });
+}
+
+async function startGameByHost(){
+
+  const snap = await get(ref(db,"rooms/"+roomId+"/players"));
+  const players = snap.val() ? Object.keys(snap.val()) : [];
+
+  if(players.length < 2){
+    alert("Minimal 2 player!");
+    return;
+  }
+
+  await update(ref(db,"rooms/"+roomId),{
+    status:"started"
+  });
 }
 
 function startGame(){
+
+  document.getElementById("lobby").style.display="none";
   document.getElementById("gameArea").style.display="block";
+
   onValue(ref(db,"rooms/"+roomId+"/gameState"), snap=>{
     if(!snap.exists()) return;
     updateUI(snap.val());
@@ -67,19 +136,16 @@ function startGame(){
 
 function updateUI(data){
 
-  moodBar.style.width=data.mood+"%";
-  ecoBar.style.width=data.eco+"%";
-  lawBar.style.width=data.law+"%";
-  harmBar.style.width=data.harm+"%";
+  document.getElementById("roundInfo").innerText=
+    "Ronde "+data.round;
 
-  roundInfo.innerText="Ronde "+data.round+" / 10";
-
-  if(data.round>10){
-    showEnding(data);
+  if(data.round>3){
+    document.getElementById("crisisText").innerText="Game Selesai!";
     return;
   }
 
-  crisisText.innerText=crises[data.crisisIndex].text;
+  document.getElementById("crisisText").innerText=
+    crises[data.crisisIndex].text;
 }
 
 window.vote = async function(choice){
@@ -96,14 +162,14 @@ async function checkVotes(){
 
   if(!playersSnap.exists() || !votesSnap.exists()) return;
 
-  const players = playersSnap.val();
+  const players = Object.keys(playersSnap.val());
   const votes = votesSnap.val();
 
-  if(Object.keys(votes).length < Object.keys(players).length) return;
+  if(Object.keys(votes).length < players.length) return;
 
   await runTransaction(ref(db,"rooms/"+roomId+"/gameState"), current=>{
 
-    if(current.round>10) return current;
+    if(!current) return current;
 
     let countA=0;
     let countB=0;
@@ -118,43 +184,14 @@ async function checkVotes(){
 
     for(let key in effect){
       current[key]+=effect[key];
-      current[key]=Math.max(0,Math.min(100,current[key]));
     }
 
     current.round+=1;
     current.crisisIndex+=1;
-
-    showResult(result);
 
     return current;
 
   });
 
   await remove(ref(db,"rooms/"+roomId+"/votes"));
-}
-
-function showResult(result){
-  const overlay=document.getElementById("resultOverlay");
-  const box=document.getElementById("resultBox");
-
-  box.innerText="Keputusan bersama: "+result;
-  overlay.classList.remove("hidden");
-
-  setTimeout(()=>{
-    overlay.classList.add("hidden");
-  },1500);
-}
-
-function showEnding(data){
-
-  let avg=(data.mood+data.eco+data.law+data.harm)/4;
-
-  let text="";
-
-  if(avg>75) text="🌟 NEGARA AMAN DAN MAJU!";
-  else if(avg>50) text="⚖ Negara Stabil.";
-  else text="🔥 Negara Krisis!";
-
-  crisisText.innerText=text;
-  document.getElementById("voteArea").style.display="none";
 }
